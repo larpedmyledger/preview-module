@@ -111,8 +111,8 @@ function ESPPreview.Create(Library)
     })
     Library.ThemeObjects[main] = "Background"
     
-    -- Preview area
-    local preview_area = Create("Frame", {
+    -- Preview area with ViewportFrame
+    local preview_area = Create("ViewportFrame", {
         Parent = main,
         Name = "",
         Position = UDim2.new(0, 8, 0, 8),
@@ -120,111 +120,109 @@ function ESPPreview.Create(Library)
         Size = UDim2.new(1, -16, 1, -16),
         BorderSizePixel = 0,
         BackgroundColor3 = Color3.fromRGB(22, 22, 22),
-        ZIndex = 60
+        ZIndex = 60,
+        CurrentCamera = nil,
+        LightColor = Color3.fromRGB(255, 255, 255),
+        Ambient = Color3.fromRGB(150, 150, 150)
     })
     
-    -- Character hitboxes container
+    -- Create camera for viewport
+    local viewport_cam = Instance.new("Camera")
+    viewport_cam.Parent = preview_area
+    preview_area.CurrentCamera = viewport_cam
+    
+    -- Container for ESP overlays
     local hitpart = Create("Frame", {
-        Parent = preview_area,
+        Parent = main,
         Name = "",
         BackgroundTransparency = 1,
         Position = UDim2.new(0.5, -50, 0.5, -140),
         BorderColor3 = Color3.fromRGB(0, 0, 0),
         Size = UDim2.new(0, 100, 0, 280),
         BorderSizePixel = 0,
-        BackgroundColor3 = Color3.fromRGB(22, 22, 22),
-        ZIndex = 60
+        ZIndex = 65
     })
     
-    -- Character parts
-    local head = Create("Frame", {
-        Parent = hitpart,
-        Name = "Head",
-        Position = UDim2.new(0.5, -25, 0, 16),
-        BorderColor3 = Color3.fromRGB(0, 0, 0),
-        Size = UDim2.new(0, 50, 0, 44),
-        BorderSizePixel = 0,
-        BackgroundColor3 = Color3.fromRGB(38, 38, 38),
-        ZIndex = 61
-    })
+    -- Get player character
+    local Players = game:GetService("Players")
+    local player = Players.LocalPlayer
+    local character = player.Character or player.CharacterAdded:Wait()
     
-    local torso = Create("Frame", {
-        Parent = hitpart,
-        Name = "Torso",
-        Position = UDim2.new(0.5, -42, 0, 64),
-        BorderColor3 = Color3.fromRGB(0, 0, 0),
-        Size = UDim2.new(0, 84, 0, 90),
-        BorderSizePixel = 0,
-        BackgroundColor3 = Color3.fromRGB(38, 38, 38),
-        ZIndex = 61
-    })
+    -- Clone character into viewport
+    local char_clone
+    local function update_character()
+        if char_clone then char_clone:Destroy() end
+        
+        local current_char = player.Character
+        if not current_char then return end
+        
+        char_clone = current_char:Clone()
+        
+        -- Remove scripts and unnecessary parts
+        for _, obj in pairs(char_clone:GetDescendants()) do
+            if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
+                obj:Destroy()
+            elseif obj:IsA("Humanoid") then
+                obj.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+            elseif obj:IsA("Tool") then
+                obj:Destroy()
+            end
+        end
+        
+        char_clone.Parent = preview_area
+        
+        -- Position camera
+        if char_clone.PrimaryPart then
+            local cf = char_clone.PrimaryPart.CFrame
+            viewport_cam.CFrame = CFrame.new(cf.Position + Vector3.new(0, 1, 5), cf.Position + Vector3.new(0, 1, 0))
+        elseif char_clone:FindFirstChild("HumanoidRootPart") then
+            local hrp = char_clone.HumanoidRootPart
+            viewport_cam.CFrame = CFrame.new(hrp.Position + Vector3.new(0, 1, 5), hrp.Position + Vector3.new(0, 1, 0))
+        end
+        
+        -- Apply chams if enabled
+        if cfg._chams_enabled then
+            cfg.preview_chams(true)
+        end
+    end
     
-    local l_arm = Create("Frame", {
-        Parent = hitpart,
-        Name = "LeftArm",
-        Position = UDim2.new(0.5, -86, 0, 64),
-        BorderColor3 = Color3.fromRGB(0, 0, 0),
-        Size = UDim2.new(0, 40, 0, 90),
-        BorderSizePixel = 0,
-        BackgroundColor3 = Color3.fromRGB(38, 38, 38),
-        ZIndex = 61
-    })
+    update_character()
     
-    local r_arm = Create("Frame", {
-        Parent = hitpart,
-        Name = "RightArm",
-        Position = UDim2.new(0.5, 46, 0, 64),
-        BorderColor3 = Color3.fromRGB(0, 0, 0),
-        Size = UDim2.new(0, 40, 0, 90),
-        BorderSizePixel = 0,
-        BackgroundColor3 = Color3.fromRGB(38, 38, 38),
-        ZIndex = 61
-    })
+    -- Update on character respawn
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        update_character()
+    end)
     
-    local r_leg = Create("Frame", {
-        Parent = hitpart,
-        Name = "RightLeg",
-        Position = UDim2.new(0.5, 2, 0, 158),
-        BorderColor3 = Color3.fromRGB(0, 0, 0),
-        Size = UDim2.new(0, 40, 0, 90),
-        BorderSizePixel = 0,
-        BackgroundColor3 = Color3.fromRGB(38, 38, 38),
-        ZIndex = 61
-    })
-    
-    local l_leg = Create("Frame", {
-        Parent = hitpart,
-        Name = "LeftLeg",
-        Position = UDim2.new(0.5, -42, 0, 158),
-        BorderColor3 = Color3.fromRGB(0, 0, 0),
-        Size = UDim2.new(0, 40, 0, 90),
-        BorderSizePixel = 0,
-        BackgroundColor3 = Color3.fromRGB(38, 38, 38),
-        ZIndex = 61
-    })
-    
-    -- Chams/Glow system
+    -- Chams/Glow system for character
     local glow_patterns = {}
-    for _, v in next, hitpart:GetChildren() do 
-        local glow = Create("ImageLabel", {
-            Parent = v,
-            Name = "Glow",
-            Visible = false, 
-            ImageColor3 = Library.Theme.Accent,
-            ScaleType = Enum.ScaleType.Slice,
-            ImageTransparency = 0.9,
-            BorderColor3 = Color3.fromRGB(0, 0, 0),
-            BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-            Image = "rbxassetid://5028857084",
-            BackgroundTransparency = 1,
-            Position = UDim2.new(0, -20, 0, -20),
-            Size = UDim2.new(1, 40, 1, 40),
-            ZIndex = 62,
-            BorderSizePixel = 0,
-            SliceCenter = Rect.new(24, 24, 276, 276)
-        })
-        Library.ThemeObjects[glow] = "Accent"
-        table.insert(glow_patterns, glow)
+    cfg._chams_enabled = false
+    
+    function cfg._update_chams()
+        glow_patterns = {}
+        if not char_clone then return end
+        
+        for _, part in pairs(char_clone:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                -- Clear existing highlights
+                for _, child in pairs(part:GetChildren()) do
+                    if child:IsA("Highlight") then
+                        child:Destroy()
+                    end
+                end
+                
+                if cfg._chams_enabled then
+                    local highlight = Instance.new("Highlight")
+                    highlight.Parent = part
+                    highlight.FillColor = Library.Theme.Accent
+                    highlight.OutlineColor = Library.Theme.Accent
+                    highlight.FillTransparency = 0.5
+                    highlight.OutlineTransparency = 0
+                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    table.insert(glow_patterns, highlight)
+                end
+            end
+        end
     end
     
     -- Bounding box container
@@ -387,14 +385,8 @@ function ESPPreview.Create(Library)
     
     -- Configuration functions
     function cfg.preview_chams(bool)
-        for _, glow in next, glow_patterns do 
-            glow.Visible = bool
-        end
-        for _, part in next, hitpart:GetChildren() do 
-            if part:IsA("Frame") and part.Name ~= "" then
-                part.BackgroundColor3 = bool and Library.Theme.Accent or Color3.fromRGB(38, 38, 38)
-            end
-        end
+        cfg._chams_enabled = bool
+        cfg._update_chams()
     end
     
     function cfg.preview_box(box_type)
